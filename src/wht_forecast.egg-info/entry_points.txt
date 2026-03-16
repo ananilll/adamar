@@ -1,0 +1,2 @@
+[console_scripts]
+wht-forecast = wht_forecast.cli:main

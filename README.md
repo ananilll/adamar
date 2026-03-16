@@ -1,0 +1,226 @@
+# WHT Forecast: Walsh-Hadamard Transform for Time Series Forecasting
+
+A research-grade Python implementation of time series forecasting using the Walsh-Hadamard Transform (WHT). Designed for scientific research and thesis work.
+
+## Algorithm Overview
+
+The forecasting pipeline:
+
+1. **Build** normalized Walsh-Hadamard matrix
+2. **Split** time series into non-overlapping blocks
+3. **Apply** WHT transform to each block
+4. **Select** top-k spectral coefficients by energy
+5. **Compute** coefficient deltas between consecutive blocks
+6. **Smooth** deltas over a sliding window
+7. **Forecast** next block coefficients
+8. **Apply** inverse WHT to obtain forecast
+9. **Evaluate** using MAE, MSE, RMSE, MAPE
+10. **Compare** with baseline models (naive, moving average, linear extrapolation)
+
+## Mathematical Foundation
+
+**Hadamard matrix** (recursive construction):
+
+```
+H_1 = [1]
+H_{2n} = [ H_n   H_n ]
+         [ H_n  -H_n ]
+```
+
+**Normalized matrix**: `A = H / sqrt(n)` with property `A @ A.T = I`
+
+**Forward transform**: `C = A @ X`  
+**Inverse transform**: `X = A.T @ C`
+
+## Installation
+
+```bash
+pip install -e .
+# or
+pip install -r requirements.txt
+```
+
+## Quick Start
+
+### CLI
+
+```bash
+# Run full experiment with synthetic data (default)
+python -m wht_forecast.cli run-experiment
+
+# Run on CSV file
+python -m wht_forecast.cli run-experiment --csv data/example_timestamp_value.csv
+
+# With custom parameters
+python -m wht_forecast.cli run-experiment \
+    --csv data.csv \
+    --value-column value \
+    --block-size 32 \
+    --top-k 8 \
+    --smooth-window 3 \
+    --normalize zscore \
+    --output-dir ./outputs
+```
+
+### Python API
+
+```python
+from wht_forecast import (
+    build_normalized_hadamard,
+    forecast_next_block,
+    generate_synthetic_series,
+    compute_metrics,
+)
+
+# Generate synthetic data
+series = generate_synthetic_series(n=512, seed=42, noise_level=0.2)
+
+# Build Hadamard matrix and forecast (A optional - built internally if omitted)
+forecast, info = forecast_next_block(
+    series, block_size=32, top_k=8, smooth_window=3
+)
+
+# Evaluate (with holdout)
+actual = series[480:512]  # last block
+metrics = compute_metrics(actual, forecast)
+print(f"MAE: {metrics['MAE']:.4f}, RMSE: {metrics['RMSE']:.4f}")
+```
+
+## Project Structure
+
+```
+project_root/
+├── README.md
+├── requirements.txt
+├── pyproject.toml
+├── src/
+│   └── wht_forecast/
+│       ├── __init__.py
+│       ├── hadamard.py      # Hadamard matrix construction
+│       ├── transform.py     # Forward/inverse WHT
+│       ├── blocks.py        # Block splitting
+│       ├── filtering.py     # Top-k coefficient selection
+│       ├── forecasting.py   # Main forecasting algorithm
+│       ├── metrics.py       # MAE, MSE, RMSE, MAPE
+│       ├── baselines.py     # Naive, MA, linear baselines
+│       ├── data_loader.py   # CSV loading, normalization
+│       ├── synthetic_data.py
+│       ├── visualization.py
+│       ├── experiment.py    # Full experiment orchestration
+│       └── cli.py          # Command-line interface
+├── experiments/
+│   └── run_experiment.py
+├── tests/
+│   ├── test_hadamard.py
+│   ├── test_transform.py
+│   └── test_forecasting.py
+└── notebooks/
+    └── exploration.ipynb
+```
+
+## Running on Real Datasets
+
+Load time series from CSV files. Supported formats:
+
+**Option A: timestamp,value**
+```csv
+timestamp,value
+2023-01-01,10
+2023-01-02,11
+2023-01-03,9
+```
+
+**Option B: date,value**
+```csv
+date,value
+2023-01-01,10
+2023-01-02,11
+```
+
+**Option C: single column**
+```csv
+value
+10
+11
+9
+```
+
+### CLI Usage
+
+```bash
+# Auto-detect value column
+python -m wht_forecast.cli run-experiment --csv data.csv
+
+# Specify value column explicitly
+python -m wht_forecast.cli run-experiment --csv data.csv --value-column sales
+
+# With preprocessing (z-score or min-max normalization)
+python -m wht_forecast.cli run-experiment --csv data.csv --normalize zscore
+```
+
+### Python API
+
+```python
+from wht_forecast import load_time_series_from_csv, normalize_series, forecast_next_block, compute_metrics
+
+# Load with full cleaning (prints diagnostics)
+series = load_time_series_from_csv("data.csv")
+
+# Or load silently
+series = load_time_series_from_csv("data.csv", verbose=False)
+series = normalize_series(series, method="zscore")
+
+# Forecast (requires at least 64 values)
+forecast, info = forecast_next_block(series, block_size=32, top_k=8)
+```
+
+### Data Loader Features
+
+- **Price column priority**: Close → close → Adj Close → price → value (else last numeric)
+- **European format**: `"19403,9"` and `"19 403,9"` (comma decimal, space thousands)
+- **Date sorting**: If Date column exists, parses and sorts chronologically
+- **Validation**: Minimum 64 values required
+- **Compatible with**: Yahoo Finance, MetaTrader, TradingView, generic CSV
+
+### Example Data
+
+Example CSVs are in `data/`:
+- `data/example_timestamp_value.csv` — timestamp,value format
+- `data/example_single_column.csv` — single value column
+
+## Testing
+
+```bash
+pytest tests/ -v
+```
+
+## Performance
+
+Validated for:
+- Series length up to 100,000
+- Block sizes: 8, 16, 32, 64, 128
+
+## Architecture
+
+The project follows a modular design with clear separation of concerns:
+
+| Module | Responsibility |
+|--------|----------------|
+| `hadamard.py` | Pure math: Walsh-Hadamard matrix construction (H, A) |
+| `transform.py` | Forward/inverse WHT (C = A@X, X = A.T@C) |
+| `blocks.py` | Time series splitting into non-overlapping blocks |
+| `filtering.py` | Top-k coefficient selection by energy |
+| `forecasting.py` | Full pipeline: blocks → WHT → top-k → deltas → smooth → forecast |
+| `metrics.py` | MAE, MSE, RMSE, MAPE |
+| `baselines.py` | Naive, moving average, linear extrapolation |
+| `data_loader.py` | CSV loading, normalization (zscore, minmax) |
+| `synthetic_data.py` | Reproducible synthetic series generation |
+| `visualization.py` | Matplotlib plots (separate from core logic) |
+| `experiment.py` | Orchestrates full experiment + small numerical example |
+| `cli.py` | Argument parsing and CLI entry point |
+
+**Data flow**: `series` → `blocks` → `WHT` → `top-k` → `deltas` → `smooth` → `forecast_coeffs` → `inverse_WHT` → `forecast_block`
+
+## License
+
+MIT
